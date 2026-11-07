@@ -58,7 +58,9 @@
           μScope<span class="wordmark-divider"></span
           ><span class="top-title">微观市场监控</span
           ><span class="version">BETA</span>
-          <span class="top-subtitle">从可见挂单到真实成交，观察每一轮流动性与防守变化</span>
+          <span class="top-subtitle"
+            >从可见挂单到真实成交，观察每一轮流动性与防守变化</span
+          >
         </div>
         <div class="top-right">
           <div class="heading-actions">
@@ -130,17 +132,26 @@
               ><span id="price-change" class="mono muted">等待行情</span>
             </div>
             <div class="strip-stat">
-              <span>24h 最高 / 最低</span><b class="mono" id="high-low">— / —</b>
+              <span>24h 最高 / 最低</span
+              ><b class="mono" id="high-low">— / —</b>
             </div>
             <div class="strip-stat">
               <span>24h 成交额 <small class="quote-unit">USDT</small></span
               ><b class="mono" id="volume24">—</b>
             </div>
-            <div class="strip-stat">
+            <div
+              class="strip-stat help-trigger"
+              data-help-hover="spread"
+              data-help-button="quality"
+            >
               <span>买卖价差</span
               ><b class="mono" id="spread">— <small>bp</small></b>
             </div>
-            <div class="strip-stat feed-stat">
+            <div
+              class="strip-stat feed-stat help-trigger"
+              data-help-hover="feed_age"
+              data-help-button="quality"
+            >
               <span>接收年龄</span
               ><b id="feed-age" class="mono">— <small>ms</small></b>
             </div>
@@ -154,7 +165,12 @@
         <section class="metrics-grid" aria-label="核心指标">
           <article class="metric" data-help="pressure">
             <div class="metric-label">
-              <span class="metric-title">加权盘口失衡 <small>PRESSURE</small></span>
+              <span
+                class="metric-title help-trigger"
+                data-help-hover="pressure"
+                data-help-button="pressure"
+                >加权盘口失衡 <small>PRESSURE</small></span
+              >
               <span class="metric-meta"
                 ><span class="metric-tag" id="pressure-tag">等待数据</span>
                 <button
@@ -183,9 +199,14 @@
               ><span>BID 占优</span>
             </div>
           </article>
-          <article class="metric">
+          <article class="metric" data-help="delta">
             <div class="metric-label">
-              <span class="metric-title">主动成交净额 <small>DELTA</small></span>
+              <span
+                class="metric-title help-trigger"
+                data-help-hover="delta"
+                data-help-button="delta"
+                >主动成交净额 <small>DELTA</small></span
+              >
               <span class="metric-meta"
                 ><span id="delta-unit" class="metric-tag">5s · USDT</span>
                 <button
@@ -208,13 +229,23 @@
             <div class="flow-split"><i id="buy-share-fill"></i></div>
             <div class="metric-foot">
               <span id="buy-share-text">主动买入 —</span
-              ><span id="tfi">TFI —</span
+              ><span
+                id="tfi"
+                class="help-trigger"
+                data-help-hover="tfi"
+                data-help-button="delta"
+                >TFI —</span
               ><span id="sell-share-text">卖出 —</span>
             </div>
           </article>
-          <article class="metric">
+          <article class="metric" data-help="rotation">
             <div class="metric-label">
-              <span class="metric-title">压力变化 <small>ROTATION</small></span>
+              <span
+                class="metric-title help-trigger"
+                data-help-hover="rotation"
+                data-help-button="rotation"
+                >压力变化 <small>ROTATION</small></span
+              >
               <span class="metric-meta"
                 ><span class="metric-tag" id="rotation-tag">预热中</span>
                 <button
@@ -239,9 +270,14 @@
               <span>−1 向 ASK 转移</span><span>+1 向 BID 转移</span>
             </div>
           </article>
-          <article class="metric">
+          <article class="metric" data-help="volatility">
             <div class="metric-label">
-              <span class="metric-title">波动扩张 <small>VOL EXPANSION</small></span>
+              <span
+                class="metric-title help-trigger"
+                data-help-hover="volatility"
+                data-help-button="volatility"
+                >波动扩张 <small>VOL EXPANSION</small></span
+              >
               <span class="metric-meta"
                 ><span id="expansion-tag" class="metric-tag">预热中</span>
                 <button
@@ -274,7 +310,17 @@
           <section class="panel price-panel">
             <div class="panel-heading">
               <div>
-                <h3>K 线与微观结构主图 <span>K-LINE · DEFENSE · EVENTS</span></h3>
+                <h3>
+                  K 线与微观结构主图
+                  <button
+                    class="info"
+                    aria-label="主图与视觉标记说明"
+                    data-help-button="visuals"
+                  >
+                    i
+                  </button>
+                  <span>K-LINE · DEFENSE · EVENTS</span>
+                </h3>
                 <p>同图叠加 K 线、120 档防守热力墙与已确认的主动攻击承接点</p>
               </div>
               <div class="chart-controls">
@@ -282,17 +328,21 @@
                   <button data-mode="candles" class="active">K 线</button
                   ><button data-mode="line">分时</button>
                 </div>
-                <div class="overlay-toggles" id="chart-overlays" aria-label="图层叠加">
+                <div
+                  class="overlay-toggles"
+                  id="chart-overlays"
+                  aria-label="图层叠加"
+                >
                   <button
                     data-overlay="defense"
                     class="active"
-                    title="在 K 线图上叠加显示防守热度墙"
+                    data-help-hover="overlay_defense"
                   >
                     🛡 防守线</button
                   ><button
                     data-overlay="events"
                     class="active"
-                    title="在 K 线图上标记确认的承接与补单事件"
+                    data-help-hover="overlay_events"
                   >
                     ◆ 承接点
                   </button>
@@ -308,9 +358,22 @@
               <span
                 ><i class="mint"></i>中间价
                 <b class="mono" id="chart-price">—</b></span
-              ><span><i class="lavender"></i>Pressure</span
-              ><span><i class="legend-line"></i>防守热力线 (Top 12)</span
-              ><span><i class="legend-diamond"></i>承接事件 / <b class="amber-text">◎ 重复补量</b></span
+              ><span
+                class="help-trigger"
+                data-help-hover="pressure"
+                data-help-button="pressure"
+                ><i class="lavender"></i>Pressure</span
+              ><span
+                class="help-trigger"
+                data-help-hover="overlay_defense"
+                data-help-button="visuals"
+                ><i class="legend-line"></i>防守热力线 (Top 12)</span
+              ><span
+                class="help-trigger"
+                data-help-hover="overlay_events"
+                data-help-button="visuals"
+                ><i class="legend-diamond"></i>承接事件 /
+                <b class="amber-text">◎ 重复补量</b></span
               ><span class="legend-right" id="history-duration"
                 >正在积累本次会话</span
               >
@@ -327,7 +390,9 @@
               </div>
             </div>
             <div class="chart-bottom">
-              <span><i class="live-dot"></i>100ms 指标推送 · 悬停下方事件或右侧盘口可联动定位价位</span
+              <span
+                ><i class="live-dot"></i>100ms 指标推送 ·
+                悬停下方事件或右侧盘口可联动定位价位</span
               ><span id="chart-sampling">源事件采样 · 接收后绘制</span>
             </div>
 
@@ -336,7 +401,10 @@
                 <div class="subpanel-title">
                   <h4>流动性事件 <span>LIQUIDITY EVENTS</span></h4>
                   <div class="event-summary-inline">
-                    <span class="kpi-chip"
+                    <span
+                      class="kpi-chip help-trigger"
+                      data-help-hover="absorption"
+                      data-help-button="absorption"
                       >吸收强度
                       <button
                         class="info"
@@ -346,7 +414,10 @@
                         i
                       </button>
                       <b class="mono" id="absorption-max">—</b></span
-                    ><span class="kpi-chip"
+                    ><span
+                      class="kpi-chip help-trigger"
+                      data-help-hover="reload"
+                      data-help-button="reload"
                       >补单强度
                       <button
                         class="info"
@@ -356,7 +427,10 @@
                         i
                       </button>
                       <b class="mono" id="reload-max">—</b></span
-                    ><span class="kpi-chip"
+                    ><span
+                      class="kpi-chip help-trigger"
+                      data-help-hover="reload"
+                      data-help-button="reload"
                       >重复补量 <b class="mono" id="reload-events">—</b></span
                     >
                   </div>
@@ -373,9 +447,27 @@
                     <tr>
                       <th>时间 / 行为</th>
                       <th>防守价位</th>
-                      <th>吸收比</th>
-                      <th>补量比 / 次数</th>
-                      <th>1s / 5s / 15s 价格反应 (bp)</th>
+                      <th
+                        class="help-trigger"
+                        data-help-hover="absorption"
+                        data-help-button="absorption"
+                      >
+                        吸收比 ⓘ
+                      </th>
+                      <th
+                        class="help-trigger"
+                        data-help-hover="reload"
+                        data-help-button="reload"
+                      >
+                        补量比 / 次数 ⓘ
+                      </th>
+                      <th
+                        class="help-trigger"
+                        data-help-hover="returns"
+                        data-help-button="returns"
+                      >
+                        1s / 5s / 15s 价格反应 (bp) ⓘ
+                      </th>
                     </tr>
                   </thead>
                   <tbody id="events-body"></tbody>
@@ -391,11 +483,29 @@
           <section class="panel book-panel">
             <div class="panel-heading">
               <div>
-                <h3>实时订单簿与防守热度 <span>ORDER BOOK & DEFENSE</span></h3>
-                <p>两侧各 20 档 · 内嵌档位防守热度、刷新次数与主动攻击吸收状态</p>
+                <h3>
+                  实时订单簿与防守热度
+                  <button
+                    class="info"
+                    aria-label="订单簿与防守标记说明"
+                    data-help-button="visuals"
+                  >
+                    i
+                  </button>
+                  <span>ORDER BOOK & DEFENSE</span>
+                </h3>
+                <p>
+                  两侧各 20 档 · 内嵌档位防守热度、刷新次数与主动攻击吸收状态
+                </p>
               </div>
               <div class="book-head-badges">
-                <div class="heat-legend">热度 <i></i></div>
+                <div
+                  class="heat-legend help-trigger"
+                  data-help-hover="defense"
+                  data-help-button="defense"
+                >
+                  热度 <i></i>
+                </div>
                 <span class="mini-badge">L2 · 20档</span>
               </div>
             </div>
@@ -403,7 +513,12 @@
               <span>价格 <small class="quote-unit">USDT</small></span
               ><span>数量 <small class="base-unit">BTC</small></span
               ><span>累计</span
-              ><span>防守热度 / 承接</span>
+              ><span
+                class="help-trigger"
+                data-help-hover="book_badges"
+                data-help-button="visuals"
+                >防守热度 / 承接 ⓘ</span
+              >
             </div>
             <div id="asks" class="book-side"></div>
             <div class="book-mid">
@@ -414,7 +529,9 @@
               <div class="book-balance">
                 <div class="book-balance-labels">
                   <span class="positive">Bid <b id="book-bid-share">—</b></span
-                  ><span class="negative">Ask <b id="book-ask-share">—</b></span>
+                  ><span class="negative"
+                    >Ask <b id="book-ask-share">—</b></span
+                  >
                 </div>
                 <div class="flow-split"><i id="book-balance-fill"></i></div>
               </div>
@@ -443,10 +560,34 @@
                     <tr>
                       <th>方向 / 价位</th>
                       <th>当前数量</th>
-                      <th>存续</th>
-                      <th>刷新</th>
-                      <th>保留</th>
-                      <th>防守热度</th>
+                      <th
+                        class="help-trigger"
+                        data-help-hover="defense"
+                        data-help-button="defense"
+                      >
+                        存续
+                      </th>
+                      <th
+                        class="help-trigger"
+                        data-help-hover="defense"
+                        data-help-button="defense"
+                      >
+                        刷新
+                      </th>
+                      <th
+                        class="help-trigger"
+                        data-help-hover="defense"
+                        data-help-button="defense"
+                      >
+                        保留
+                      </th>
+                      <th
+                        class="help-trigger"
+                        data-help-hover="defense"
+                        data-help-button="defense"
+                      >
+                        防守热度 ⓘ
+                      </th>
                     </tr>
                   </thead>
                   <tbody id="defense-body"></tbody>
@@ -464,7 +605,17 @@
           <section class="panel flow-panel" id="flow-panel">
             <div class="panel-heading">
               <div>
-                <h3>主动成交流 <span>ORDER FLOW</span></h3>
+                <h3>
+                  主动成交流
+                  <button
+                    class="info"
+                    aria-label="主动成交流说明"
+                    data-help-button="delta"
+                  >
+                    i
+                  </button>
+                  <span>ORDER FLOW</span>
+                </h3>
                 <p>真实发生的进攻，按成交 ID 去重</p>
               </div>
               <div class="segmented" id="flow-window">
@@ -498,7 +649,17 @@
           <section class="panel tape-panel">
             <div class="panel-heading">
               <div>
-                <h3>逐笔成交 <span>TIME & SALES</span></h3>
+                <h3>
+                  逐笔成交
+                  <button
+                    class="info"
+                    aria-label="逐笔成交说明"
+                    data-help-button="delta"
+                  >
+                    i
+                  </button>
+                  <span>TIME & SALES</span>
+                </h3>
                 <p>最近 60 笔 · 主动方方向</p>
               </div>
               <span class="tape-live"><i class="live-dot"></i>LIVE</span>
@@ -577,15 +738,29 @@
 
         <section class="quality-strip">
           <span
+            class="help-trigger"
+            data-help-hover="quality"
+            data-help-button="quality"
             ><i id="quality-dot" class="quality-dot"></i
-            ><b id="quality-label">等待数据同步</b></span
+            ><b id="quality-label">等待数据同步</b> ⓘ</span
           ><span>深度序号 <b id="sequence" class="mono">—</b></span
           ><span>已维护档位 <b id="level-count" class="mono">—</b></span
-          ><span>成交缺口 <b id="trade-gaps" class="mono">—</b></span
           ><span
-            title="未找到相同价位或最近可见量来自成交之后；这些成交仍全部计入 Delta"
-            >未匹配盘口成交 <b id="unmatched" class="mono">—</b></span
-          ><span>源时间差 <b id="source-age" class="mono">—</b></span>
+            class="help-trigger"
+            data-help-hover="quality"
+            data-help-button="quality"
+            >成交缺口 <b id="trade-gaps" class="mono">—</b></span
+          ><span
+            class="help-trigger"
+            data-help-hover="unmatched"
+            data-help-button="quality"
+            >未匹配盘口成交 <b id="unmatched" class="mono">—</b> ⓘ</span
+          ><span
+            class="help-trigger"
+            data-help-hover="feed_age"
+            data-help-button="quality"
+            >源时间差 <b id="source-age" class="mono">—</b></span
+          >
         </section>
         <footer>
           <span><b>μScope</b> 让市场行为变得可观察。</span>
@@ -600,16 +775,25 @@
     <dialog id="help-dialog">
       <div class="dialog-heading">
         <div>
-          <span class="eyebrow">METRIC REFERENCE</span>
+          <span class="eyebrow">METRIC REFERENCE & VISUAL GUIDE</span>
           <h2 id="help-title">指标与数据口径</h2>
         </div>
         <button id="close-help" aria-label="关闭说明">×</button>
       </div>
-      <div id="help-content"></div>
+      <div class="dialog-body">
+        <nav class="help-nav" id="help-nav" aria-label="指标分类导航"></nav>
+        <div id="help-content"></div>
+      </div>
       <div class="dialog-foot">
-        以项目《核心微观结构指标与计算方法》为计算依据。所有金额使用当前交易对的报价币。
+        <span
+          >以项目《核心微观结构指标与计算方法》为计算依据。所有金额使用当前交易对的报价币。</span
+        >
+        <span class="dialog-foot-hint"
+          >提示：日常盯盘时将鼠标悬停在各处 <b>i</b> 或表头即可快速预览</span
+        >
       </div>
     </dialog>
+    <div id="help-popover" class="help-popover" role="tooltip" hidden></div>
     <div id="toast" class="toast" role="status" hidden></div>
   </body>
 </html>
