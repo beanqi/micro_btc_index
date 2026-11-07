@@ -3,6 +3,7 @@ const C = {
   mint: "#79dfb8",
   coral: "#ec8891",
   lavender: "#a8a0ef",
+  amber: "#dbb576",
   grid: "#22313a",
   muted: "#607e90",
   text: "#a8bdca",
@@ -21,6 +22,13 @@ const ui = {
   window: 5,
   seconds: 60,
   filter: "all",
+  chartMode: "candles",
+  overlays: {
+    defense: true,
+    events: true,
+  },
+  focusPrice: null,
+  focusTs: null,
   paused: false,
   dirty: true,
   connected: false,
@@ -101,6 +109,7 @@ const visibleHistory = () =>
   ui.paused && ui.frozen ? ui.frozen.history : ui.history;
 function tone(id, n) {
   const el = $(id);
+  if (!el) return;
   el.classList.toggle("positive", finite(n) && n > 0);
   el.classList.toggle("negative", finite(n) && n < 0);
 }
@@ -128,6 +137,8 @@ function resetView() {
   ui.deltaHistory = [];
   ui.session = 0;
   ui.lastReceive = 0;
+  ui.focusPrice = null;
+  ui.focusTs = null;
   ui.dirty = true;
   cache.clear();
   renderInvalid();
@@ -333,27 +344,68 @@ function updateIdentity(info) {
   });
   document.title = `${info.base}/${info.quote} · μScope`;
 }
+
 const bookRows = {};
 for (const side of ["asks", "bids"]) {
   bookRows[side] = Array.from({ length: 20 }, () => {
     const el = document.createElement("div");
     el.className = "book-row " + (side === "asks" ? "ask" : "bid");
     el.innerHTML =
-      '<i class="depth-bar"></i><span class="price">—</span><span class="size">—</span><span class="cumulative">—</span>';
-    $(side).append(el);
-    return {
+      '<i class="depth-bar"></i><span class="price">—</span><span class="size">—</span><span class="cumulative">—</span><div class="level-meta"><span class="lvl-badge" hidden></span><span class="lvl-heat-bar"><i></i></span><span class="lvl-heat-num">—</span></div>';
+    const meta = el.children[4];
+    const rowObj = {
       el,
       bar: el.children[0],
       p: el.children[1],
       s: el.children[2],
       c: el.children[3],
+      badge: meta.children[0],
+      heatFill: meta.children[1].children[0],
+      heatNum: meta.children[2],
+      rawPrice: null,
     };
+    el.addEventListener("pointerenter", () => {
+      if (rowObj.rawPrice !== null) {
+        ui.focusPrice = rowObj.rawPrice;
+        ui.focusTs = null;
+        ui.dirty = true;
+      }
+    });
+    el.addEventListener("pointerleave", () => {
+      if (ui.focusPrice !== null) {
+        ui.focusPrice = null;
+        ui.dirty = true;
+      }
+    });
+    $(side).append(el);
+    return rowObj;
   });
 }
+
 function renderBook(d) {
+  const allLevels = [...(d?.bids ?? []), ...(d?.asks ?? [])];
+  const avgSize = allLevels.length
+    ? allLevels.reduce((s, l) => s + l.size, 0) / allLevels.length
+    : 1;
+  const meaningful = Math.max(d?.quality?.meaningful_size ?? 0, avgSize * 0.2);
+  const recentEvents = new Map();
+  if (d?.events) {
+    for (const e of d.events) {
+      if (d.ts - e.confirm_ts <= 15000) {
+        const key = `${e.side}:${e.price}`;
+        if (!recentEvents.has(key)) recentEvents.set(key, e);
+      }
+    }
+  }
+  const topWalls = new Set();
+  if (d?.defense) {
+    for (const w of d.defense) topWalls.add(`${w.side}:${w.price}`);
+  }
+
   for (const side of ["bids", "asks"]) {
+    const sideKey = side === "bids" ? "bid" : "ask";
     let cumulative = 0;
-    let rows = (d?.[side] ?? []).map((l) => ({
+    const rows = (d?.[side] ?? []).map((l) => ({
       ...l,
       cumulative: (cumulative += l.size),
     }));
@@ -361,10 +413,58 @@ function renderBook(d) {
     if (side === "asks") rows.reverse();
     bookRows[side].forEach((row, i) => {
       const l = rows[i];
+      row.rawPrice = l ? l.price : null;
       row.p.textContent = l ? price(l.price) : "—";
       row.s.textContent = l ? size(l.size) : "—";
-      row.c.textContent = l ? compact(l.cumulative, 3) : "—";
+      row.s.classList.toggle("whale", !!l && l.size >= avgSize * 1.8);
+      row.c.textContent = l ? compact(l.cumulative, 2) : "—";
       row.bar.style.width = (l ? (l.cumulative / max) * 100 : 0) + "%";
+
+      if (!l) {
+        row.badge.hidden = true;
+        row.heatFill.style.width = "0%";
+        row.heatNum.textContent = "—";
+        row.heatNum.classList.remove("hot");
+        row.el.classList.remove("is-wall", "is-focus");
+        return;
+      }
+
+      const isMeaningfulLevel = l.size >= meaningful;
+      const heatScore = isMeaningfulLevel
+        ? Math.round((l.defense_heat || 0) * 100)
+        : 0;
+      row.heatFill.style.width = heatScore + "%";
+      row.heatNum.textContent = heatScore >= 5 ? String(heatScore) : "·";
+      row.heatNum.classList.toggle("hot", heatScore >= 60);
+
+      const ev = recentEvents.get(`${sideKey}:${l.price}`);
+      const absScore = l.absorption ?? ev?.absorption_score ?? null;
+      const reloads = l.reload_count || ev?.reload_count || 0;
+
+      if (absScore && absScore >= 0.45) {
+        row.badge.hidden = false;
+        row.badge.className = "lvl-badge absorb";
+        row.badge.textContent = `吸${fmt(absScore, 1)}×`;
+      } else if (reloads > 0) {
+        row.badge.hidden = false;
+        row.badge.className = "lvl-badge reload";
+        row.badge.textContent = `补×${reloads}`;
+      } else if (isMeaningfulLevel && l.refresh_count > 0) {
+        row.badge.hidden = false;
+        row.badge.className = "lvl-badge refresh";
+        row.badge.textContent = `↻${l.refresh_count}`;
+      } else {
+        row.badge.hidden = true;
+      }
+
+      const isWall =
+        (isMeaningfulLevel && heatScore >= 55) ||
+        topWalls.has(`${sideKey}:${l.price}`);
+      row.el.classList.toggle("is-wall", isWall);
+      row.el.classList.toggle(
+        "is-focus",
+        ui.focusPrice !== null && Math.abs(l.price - ui.focusPrice) < 1e-8,
+      );
     });
   }
   const b = (d?.bids ?? []).reduce((a, l) => a + l.size, 0),
@@ -375,6 +475,7 @@ function renderBook(d) {
   text("book-mid", price(d?.mid));
   text("book-spread", d ? "价差 " + fmt(d.spread_bps, 3) + " bp" : "价差 —");
 }
+
 function renderInvalid() {
   document.body.classList.add("stale");
   ui.shown = null;
@@ -433,6 +534,7 @@ function renderInvalid() {
   $("defense-empty").hidden = false;
   $("chart-empty").hidden = false;
 }
+
 function render(d) {
   if (!d?.valid) {
     renderInvalid();
@@ -551,6 +653,7 @@ function render(d) {
     "Rust compute " + fmt(d.compute_us / 1000, 2) + " ms",
   );
 }
+
 function renderEvents(d) {
   const active = d.events.filter((e) => d.ts - e.start_ts <= 3000);
   text(
@@ -574,24 +677,31 @@ function renderEvents(d) {
     events
       .map(
         (e) =>
-          `<tr><td><div class="event-kind"><span class="event-time">${time(e.confirm_ts)}</span><span class="side-chip ${e.side}">${e.side === "bid" ? "BID" : "ASK"} 承接</span>${e.repeated_reload ? '<span class="repeated">补量</span>' : ""}</div></td><td>${price(e.price)}</td><td class="${e.side === "bid" ? "positive" : "negative"}" title="攻击 ${size(e.attack_volume)} / 初始 ${size(e.start_size)}；确认后最新剩余 ${size(e.remaining_size)}">${fmt(e.absorption_score)}×</td><td>${fmt(e.replenish_ratio)}× <span class="muted">/ ${e.reload_count}</span></td><td><div class="returns">${[e.return_1s_bps, e.return_5s_bps, e.return_15s_bps].map((r) => `<span class="${r > 0 ? "positive" : r < 0 ? "negative" : "muted"}">${signed(r, 2)}</span>`).join("")}</div></td></tr>`,
+          `<tr data-price="${e.price}" data-ts="${e.confirm_ts}" class="${ui.focusPrice !== null && Math.abs(ui.focusPrice - e.price) < 1e-8 ? "is-focus" : ""}"><td><div class="event-kind"><span class="event-time">${time(e.confirm_ts)}</span><span class="side-chip ${e.side}">${e.side === "bid" ? "BID" : "ASK"} 承接</span>${e.repeated_reload ? '<span class="repeated">补量</span>' : ""}</div></td><td class="${e.side === "bid" ? "positive" : "negative"}">${price(e.price)}</td><td class="${e.side === "bid" ? "positive" : "negative"}" title="攻击 ${size(e.attack_volume)} / 初始 ${size(e.start_size)}；确认后最新剩余 ${size(e.remaining_size)}">${fmt(e.absorption_score)}×</td><td>${fmt(e.replenish_ratio)}× <span class="muted">/ ${e.reload_count}</span></td><td><div class="returns">${[e.return_1s_bps, e.return_5s_bps, e.return_15s_bps].map((r) => `<span class="${r > 0 ? "positive" : r < 0 ? "negative" : "muted"}">${signed(r, 2)}</span>`).join("")}</div></td></tr>`,
       )
       .join(""),
   );
   $("events-empty").hidden = events.length > 0;
 }
+
 function renderDefense(d) {
+  const allLevels = [...(d?.bids ?? []), ...(d?.asks ?? [])];
+  const avgSize = allLevels.length
+    ? allLevels.reduce((s, l) => s + l.size, 0) / allLevels.length
+    : 0;
+  const rows = (d.defense ?? []).filter((l) => l.size >= avgSize * 0.15);
   html(
     "defense-body",
-    d.defense
+    rows
       .map(
         (l) =>
-          `<tr><td><span class="side-chip ${l.side}">${l.side.toUpperCase()}</span>${price(l.price)}</td><td>${size(l.size)}</td><td>${fmt(l.age_s, 1)}s</td><td>${l.refresh_count}</td><td>${pct(l.retention)}</td><td><div class="heat-cell"><span class="heat-track"><i style="width:${l.defense_heat * 100}%"></i></span><b>${fmt(l.defense_heat * 100, 0)}</b></div></td></tr>`,
+          `<tr data-price="${l.price}" class="${ui.focusPrice !== null && Math.abs(ui.focusPrice - l.price) < 1e-8 ? "is-focus" : ""}"><td><span class="side-chip ${l.side}">${l.side.toUpperCase()}</span><span class="${l.side === "bid" ? "positive" : "negative"}">${price(l.price)}</span></td><td>${size(l.size)}</td><td>${fmt(l.age_s, 1)}s</td><td>${l.refresh_count}</td><td>${pct(l.retention)}</td><td><div class="heat-cell"><span class="heat-track"><i style="width:${l.defense_heat * 100}%"></i></span><b>${fmt(l.defense_heat * 100, 0)}</b></div></td></tr>`,
       )
       .join(""),
   );
-  $("defense-empty").hidden = d.defense.length > 0;
+  $("defense-empty").hidden = rows.length > 0;
 }
+
 function renderTape(d) {
   html(
     "tape",
@@ -725,63 +835,379 @@ function plotPoints(history, field, x, y) {
   flush();
   return result;
 }
+
+function buildCandles(hist, bucketMs) {
+  const candles = [];
+  let current = null,
+    prevTs = 0;
+  for (const p of hist) {
+    const bStart = Math.floor(p.ts / bucketMs) * bucketMs;
+    const gap = prevTs && p.ts - prevTs > 3000;
+    if (!current || current.startTs !== bStart || gap) {
+      const openPrice = !gap && current ? current.close : p.mid;
+      current = {
+        startTs: bStart,
+        ts: bStart + bucketMs / 2,
+        open: openPrice,
+        high: Math.max(openPrice, p.mid),
+        low: Math.min(openPrice, p.mid),
+        close: p.mid,
+        pressure: p.pressure,
+      };
+      candles.push(current);
+    } else {
+      if (p.mid > current.high) current.high = p.mid;
+      if (p.mid < current.low) current.low = p.mid;
+      current.close = p.mid;
+      current.pressure = p.pressure;
+    }
+    prevTs = p.ts;
+  }
+  return candles;
+}
+
 function drawPrice() {
   const { ctx, w, h } = context("price-chart");
   if (!w || !h) return;
-  const left = 9,
-    right = 75,
-    top = 13,
-    bottom = 25,
-    pH = h * 0.64,
-    pressureTop = h * 0.77,
-    pressureH = h * 0.14;
-  const end = ui.shown?.source_ts ?? Date.now(),
+  const left = 10,
+    right = 78,
+    top = 14,
+    bottom = 22,
+    pH = Math.round(h * 0.7),
+    pressureTop = Math.round(h * 0.77),
+    pressureH = Math.round(h * 0.14);
+  const d = ui.shown;
+  const end = d?.source_ts ?? Date.now(),
     start = end - ui.seconds * 1000;
   const hist = visibleHistory().filter((p) => p.ts >= start && p.ts <= end);
-  grid(ctx, w, pH, left, right, 3);
+  grid(ctx, w, pH, left, right, 4);
   if (hist.length < 2) return;
+
   let min = Infinity,
     max = -Infinity;
   for (const p of hist) {
     min = Math.min(min, p.mid);
     max = Math.max(max, p.mid);
   }
+  if (d?.bids?.[0] && d?.asks?.[0]) {
+    min = Math.min(min, d.bids[0].price);
+    max = Math.max(max, d.asks[0].price);
+  }
+
+  const histStart = Math.max(start, hist[0].ts - 1000);
+  const visibleEvents =
+    ui.overlays.events && d?.events
+      ? d.events.filter(
+          (e) =>
+            e.confirm_ts >= histStart &&
+            e.confirm_ts <= end &&
+            (ui.filter === "all" || e.side === ui.filter),
+        )
+      : [];
+  const priceSpan = Math.max(
+    max - min,
+    10 ** -(d?.info?.price_decimals ?? 2) * 6,
+  );
+  for (const e of visibleEvents) {
+    if (Math.abs(e.price - (min + max) / 2) <= priceSpan * 1.5) {
+      min = Math.min(min, e.price);
+      max = Math.max(max, e.price);
+    }
+  }
+  if (
+    ui.focusPrice !== null &&
+    Math.abs(ui.focusPrice - (min + max) / 2) <= priceSpan * 1.8
+  ) {
+    min = Math.min(min, ui.focusPrice);
+    max = Math.max(max, ui.focusPrice);
+  }
+
   const pad = Math.max(
-    (max - min) * 0.13,
-    10 ** -(ui.shown?.info.price_decimals ?? 2) * 4,
+    (max - min) * 0.16,
+    10 ** -(d?.info?.price_decimals ?? 2) * 4,
   );
   min -= pad;
   max += pad;
+
   const x = (ts) => left + ((ts - start) / (end - start)) * (w - left - right),
     y = (v) => top + ((max - v) / (max - min)) * (pH - top - 10);
-  const points = plotPoints(hist, "mid", x, y);
-  // Fill each continuous segment separately, so outages never look like normal continuity.
-  const grad = ctx.createLinearGradient(0, 0, 0, pH);
-  grad.addColorStop(0, "#79dfb827");
-  grad.addColorStop(1, "#79dfb800");
-  let segment = [];
-  const fill = () => {
-    if (segment.length > 1) {
-      ctx.beginPath();
-      ctx.moveTo(segment[0][0], pH);
-      for (const p of segment) ctx.lineTo(...p);
-      ctx.lineTo(segment.at(-1)[0], pH);
-      ctx.closePath();
-      ctx.fillStyle = grad;
-      ctx.fill();
+
+  // Layer 1: Defense Heat Profile Bars & Key Wall Lines
+  if (ui.overlays.defense && d) {
+    const allBookLevels = [...(d.bids ?? []), ...(d.asks ?? [])];
+    const avgTopSize = allBookLevels.length
+      ? allBookLevels.reduce((s, l) => s + l.size, 0) / allBookLevels.length
+      : 0;
+    const minWallSize = Math.max(
+      d.quality?.meaningful_size ?? 0,
+      avgTopSize * 0.15,
+    );
+
+    const wallMap = new Map();
+    for (const l of d.defense ?? []) {
+      if (l.size >= minWallSize && l.defense_heat >= 0.45) {
+        wallMap.set(`${l.side}:${l.price}`, l);
+      }
     }
-    segment = [];
-  };
-  for (const p of [...points, null]) {
-    if (p) segment.push(p);
-    else fill();
+    for (const side of ["bids", "asks"]) {
+      for (const l of d[side] ?? []) {
+        if (
+          l.size >= minWallSize &&
+          l.defense_heat >= 0.5 &&
+          !wallMap.has(`${l.side}:${l.price}`)
+        ) {
+          wallMap.set(`${l.side}:${l.price}`, l);
+        }
+      }
+    }
+
+    const scoreWall = (l) => l.defense_heat * Math.sqrt(l.size / (minWallSize || 1));
+    const inViewBids = [...wallMap.values()]
+      .filter((l) => l.side === "bid" && l.price >= min && l.price <= max)
+      .sort((a, b) => scoreWall(b) - scoreWall(a))
+      .slice(0, 3);
+    const inViewAsks = [...wallMap.values()]
+      .filter((l) => l.side === "ask" && l.price >= min && l.price <= max)
+      .sort((a, b) => scoreWall(b) - scoreWall(a))
+      .slice(0, 3);
+    const topWalls = [...inViewBids, ...inViewAsks];
+    const maxWallSize = Math.max(1e-9, ...topWalls.map((l) => l.size));
+    const plotW = w - left - right;
+
+    const labeledYs = [];
+    ctx.font = "8px ui-monospace, SFMono-Regular, monospace";
+    for (const l of topWalls) {
+      const ly = y(l.price);
+      const heat = l.defense_heat;
+      const barLen = Math.max(
+        48,
+        Math.min(plotW * 0.34, plotW * 0.34 * (l.size / maxWallSize)),
+      );
+      const barH = 3 + heat * 4;
+
+      // Subtle dashed line across chart
+      ctx.strokeStyle =
+        l.side === "bid"
+          ? `rgba(121, 223, 184, ${0.14 + heat * 0.22})`
+          : `rgba(236, 136, 145, ${0.14 + heat * 0.22})`;
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([3, 5]);
+      ctx.beginPath();
+      ctx.moveTo(left, ly);
+      ctx.lineTo(w - right, ly);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Right-anchored Defense Heat & Size Profile Bar
+      ctx.fillStyle =
+        l.side === "bid"
+          ? `rgba(121, 223, 184, ${0.14 + heat * 0.24})`
+          : `rgba(236, 136, 145, ${0.14 + heat * 0.24})`;
+      ctx.fillRect(w - right - barLen, ly - barH / 2, barLen, barH);
+
+      if (!labeledYs.some((py) => Math.abs(py - ly) < 13)) {
+        labeledYs.push(ly);
+        const label = `🛡${l.side === "bid" ? "BID" : "ASK"} 热度${Math.round(heat * 100)} · ${size(l.size)}${l.refresh_count ? ` ↻${l.refresh_count}` : ""}`;
+        const tw = ctx.measureText(label).width + 8;
+        ctx.fillStyle = l.side === "bid" ? "#11241fe6" : "#27171de6";
+        ctx.fillRect(w - right - tw - 4, ly - 10, tw, 11);
+        ctx.fillStyle = l.side === "bid" ? C.mint : C.coral;
+        ctx.textAlign = "right";
+        ctx.fillText(label, w - right - 8, ly - 2);
+      }
+    }
+
+    // Off-screen strongest meaningful defense wall callouts
+    const highAskWall = (d.defense ?? [])
+      .filter((l) => l.side === "ask" && l.price > max && l.size >= minWallSize)
+      .sort((a, b) => scoreWall(b) - scoreWall(a))[0];
+    if (highAskWall) {
+      const txt = `▲ 上方防守墙 ${price(highAskWall.price)} (热度${Math.round(highAskWall.defense_heat * 100)} · ${size(highAskWall.size)})`;
+      const tw = ctx.measureText(txt).width + 10;
+      ctx.fillStyle = "#29181ed9";
+      ctx.fillRect(left + 4, top, tw, 12);
+      ctx.fillStyle = C.coral;
+      ctx.textAlign = "left";
+      ctx.fillText(txt, left + 9, top + 9);
+    }
+    const lowBidWall = (d.defense ?? [])
+      .filter((l) => l.side === "bid" && l.price < min && l.size >= minWallSize)
+      .sort((a, b) => scoreWall(b) - scoreWall(a))[0];
+    if (lowBidWall) {
+      const txt = `▼ 下方防守墙 ${price(lowBidWall.price)} (热度${Math.round(lowBidWall.defense_heat * 100)} · ${size(lowBidWall.size)})`;
+      const tw = ctx.measureText(txt).width + 10;
+      ctx.fillStyle = "#122621d9";
+      ctx.fillRect(left + 4, pH - 14, tw, 12);
+      ctx.fillStyle = C.mint;
+      ctx.textAlign = "left";
+      ctx.fillText(txt, left + 9, pH - 5);
+    }
   }
-  line(ctx, points, C.mint, 1.6);
+
+  // Layer 2: K-Line Candlesticks or Mid-Price Line
+  const bucketMs =
+    ui.seconds <= 60 ? 2000 : ui.seconds <= 180 ? 5000 : 15000;
+  const candles = buildCandles(hist, bucketMs);
+  const points = plotPoints(hist, "mid", x, y);
+
+  if (ui.chartMode === "candles" && candles.length >= 1) {
+    // Subtle mid-price trace behind candles
+    line(ctx, points, "#79dfb840", 1.0);
+    const totalBuckets = Math.max(10, (end - start) / bucketMs);
+    const candleW = Math.max(
+      2.5,
+      Math.min(12, ((w - left - right) / totalBuckets) * 0.66),
+    );
+    for (const c of candles) {
+      const cx = x(c.ts);
+      if (cx < left || cx > w - right) continue;
+      const up = c.close >= c.open;
+      const color = up ? C.mint : C.coral;
+      const highY = y(c.high),
+        lowY = y(c.low),
+        openY = y(c.open),
+        closeY = y(c.close);
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx, highY);
+      ctx.lineTo(cx, lowY);
+      ctx.stroke();
+
+      const bodyTop = Math.min(openY, closeY);
+      const bodyH = Math.max(1.6, Math.abs(closeY - openY));
+      ctx.fillStyle = up ? "#79dfb8d9" : "#ec8891d9";
+      ctx.fillRect(cx - candleW / 2, bodyTop, candleW, bodyH);
+    }
+  } else {
+    const grad = ctx.createLinearGradient(0, 0, 0, pH);
+    grad.addColorStop(0, "#79dfb827");
+    grad.addColorStop(1, "#79dfb800");
+    let segment = [];
+    const fill = () => {
+      if (segment.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(segment[0][0], pH);
+        for (const p of segment) ctx.lineTo(...p);
+        ctx.lineTo(segment.at(-1)[0], pH);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+      }
+      segment = [];
+    };
+    for (const p of [...points, null]) {
+      if (p) segment.push(p);
+      else fill();
+    }
+    line(ctx, points, C.mint, 1.6);
+  }
+
+  // Layer 3: Liquidity Event Markers directly on K-Line
+  if (visibleEvents.length) {
+    const labeledXs = [];
+    for (const e of visibleEvents) {
+      const ex = x(e.confirm_ts);
+      if (ex < left || ex > w - right) continue;
+      const ey = Math.max(top + 8, Math.min(pH - 8, y(e.price)));
+      const color = e.side === "bid" ? C.mint : C.coral;
+
+      // Connector down to pressure pane
+      ctx.setLineDash([2, 3]);
+      line(
+        ctx,
+        [
+          [ex, ey],
+          [ex, pressureTop + pressureH],
+        ],
+        e.side === "bid" ? "#79dfb844" : "#ec889144",
+        0.8,
+      );
+      ctx.setLineDash([]);
+
+      // Outer amber ring for repeated reload
+      const r = Math.min(6.5, 3.8 + e.absorption_score * 0.7);
+      if (e.repeated_reload) {
+        ctx.beginPath();
+        ctx.arc(ex, ey, r + 3, 0, Math.PI * 2);
+        ctx.strokeStyle = C.amber;
+        ctx.lineWidth = 1.3;
+        ctx.stroke();
+      }
+
+      // Diamond marker
+      ctx.beginPath();
+      ctx.moveTo(ex, ey - r);
+      ctx.lineTo(ex + r, ey);
+      ctx.lineTo(ex, ey + r);
+      ctx.lineTo(ex - r, ey);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.strokeStyle = "#0b1014";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      if (!labeledXs.some((px) => Math.abs(px - ex) < 52)) {
+        labeledXs.push(ex);
+        const tag = `${e.side === "bid" ? "B吸" : "A吸"}${fmt(e.absorption_score, 1)}×${e.repeated_reload ? "·补" : ""}`;
+        ctx.font = "8px ui-monospace, SFMono-Regular, monospace";
+        ctx.textAlign = "center";
+        const tw = ctx.measureText(tag).width + 6;
+        const ty = e.side === "bid" ? Math.min(pH - 4, ey + r + 10) : Math.max(top + 9, ey - r - 5);
+        const bx = Math.max(left + tw / 2, Math.min(w - right - tw / 2, ex));
+        ctx.fillStyle = e.side === "bid" ? "#142b24eb" : "#2d1a21eb";
+        ctx.fillRect(bx - tw / 2, ty - 8, tw, 10);
+        ctx.fillStyle = e.repeated_reload ? C.amber : color;
+        ctx.fillText(tag, bx, ty);
+      }
+    }
+  }
+
+  // Layer 4: Cross-Highlight from Order Book / Events / Defense table hover
+  if (ui.focusPrice !== null && ui.focusPrice >= min && ui.focusPrice <= max) {
+    const fy = y(ui.focusPrice);
+    ctx.setLineDash([4, 3]);
+    line(
+      ctx,
+      [
+        [left, fy],
+        [w - right, fy],
+      ],
+      C.amber,
+      1.1,
+    );
+    ctx.setLineDash([]);
+    ctx.fillStyle = "#3a2f1b";
+    ctx.fillRect(w - right + 3, fy - 8, right - 5, 16);
+    ctx.fillStyle = C.amber;
+    ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
+    ctx.textAlign = "left";
+    ctx.fillText(price(ui.focusPrice), w - right + 7, fy + 3);
+  }
+  if (ui.focusTs !== null && ui.focusTs >= start && ui.focusTs <= end) {
+    const fx = x(ui.focusTs);
+    ctx.setLineDash([3, 3]);
+    line(
+      ctx,
+      [
+        [fx, top],
+        [fx, h - bottom],
+      ],
+      C.amber,
+      1.0,
+    );
+    ctx.setLineDash([]);
+  }
+
+  // Right Y-axis Price Labels & Latest Mid Price Callout
   ctx.textAlign = "left";
+  ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
   ctx.fillStyle = C.muted;
-  for (let i = 0; i <= 3; i++) {
-    const v = max - ((max - min) * i) / 3;
-    ctx.fillText(price(v), w - right + 9, y(v) + 3);
+  for (let i = 0; i <= 4; i++) {
+    const v = max - ((max - min) * i) / 4;
+    ctx.fillText(price(v), w - right + 8, y(v) + 3);
   }
   const latest = hist.at(-1);
   ctx.setLineDash([3, 4]);
@@ -800,11 +1226,13 @@ function drawPrice() {
   ctx.fillStyle = C.mint;
   ctx.font = "9px ui-monospace, SFMono-Regular, monospace";
   ctx.fillText(price(latest.mid), w - right + 8, y(latest.mid) + 3);
+
+  // Sub-pane: Pressure Curve
   ctx.fillStyle = "#536e7e";
   ctx.font = "8px sans-serif";
-  ctx.fillText("PRESSURE", left, pressureTop - 8);
-  ctx.fillText("+1", w - right + 9, pressureTop + 3);
-  ctx.fillText("−1", w - right + 9, pressureTop + pressureH + 3);
+  ctx.fillText("PRESSURE", left, pressureTop - 6);
+  ctx.fillText("+1", w - right + 8, pressureTop + 3);
+  ctx.fillText("−1", w - right + 8, pressureTop + pressureH + 3);
   const pY = (v) => pressureTop + ((1 - v) * pressureH) / 2;
   ctx.setLineDash([3, 4]);
   line(
@@ -817,7 +1245,9 @@ function drawPrice() {
     0.6,
   );
   ctx.setLineDash([]);
-  line(ctx, plotPoints(hist, "pressure", x, pY), C.lavender, 1.1);
+  line(ctx, plotPoints(hist, "pressure", x, pY), C.lavender, 1.15);
+
+  // Bottom X-axis Time Labels
   ctx.font = "8px ui-monospace, SFMono-Regular, monospace";
   ctx.fillStyle = C.muted;
   ctx.textAlign = "center";
@@ -834,12 +1264,28 @@ function drawPrice() {
     "history-duration",
     "已积累 " + (dur < 60 ? Math.floor(dur) + "s" : fmt(dur / 60, 1) + "min"),
   );
+
+  // Interactive Mouse Crosshair & Enriched Microstructure Tooltip
   if (ui.mouse) {
     const ts =
       start + ((ui.mouse.x - left) / (w - left - right)) * (end - start);
     let near = hist[0];
     for (const p of hist)
       if (Math.abs(p.ts - ts) < Math.abs(near.ts - ts)) near = p;
+
+    let nearCandle = null;
+    for (const c of candles)
+      if (!nearCandle || Math.abs(c.ts - ts) < Math.abs(nearCandle.ts - ts))
+        nearCandle = c;
+
+    let nearEvent = null;
+    for (const e of visibleEvents) {
+      if (Math.abs(x(e.confirm_ts) - ui.mouse.x) <= 14) {
+        nearEvent = e;
+        break;
+      }
+    }
+
     ctx.setLineDash([3, 4]);
     line(
       ctx,
@@ -851,13 +1297,24 @@ function drawPrice() {
       0.8,
     );
     ctx.setLineDash([]);
+
     const tip = $("chart-tooltip");
     tip.hidden = false;
-    tip.style.left = Math.min(Math.max(6, x(near.ts) + 10), w - 180) + "px";
-    tip.style.top = "14px";
-    tip.innerHTML = `${time(near.ts)}<br><span class="positive">${price(near.mid)}</span> ${esc(ui.shown?.info.quote ?? "")}<br>Pressure ${signed(near.pressure * 100, 1)}%`;
+    tip.style.left = Math.min(Math.max(6, x(near.ts) + 12), Math.max(6, w - 245)) + "px";
+    tip.style.top = "12px";
+
+    let tipHtml = `${time(near.ts)} · 中价 <span class="positive">${price(near.mid)}</span> ${esc(d?.info?.quote ?? "")}`;
+    if (ui.chartMode === "candles" && nearCandle) {
+      tipHtml += `<br>K线 O ${price(nearCandle.open)} / H ${price(nearCandle.high)} / L ${price(nearCandle.low)} / C ${price(nearCandle.close)}`;
+    }
+    tipHtml += `<br>Pressure <span class="${near.pressure >= 0 ? "positive" : "negative"}">${signed(near.pressure * 100, 1)}%</span>`;
+    if (nearEvent) {
+      tipHtml += `<br><span class="${nearEvent.side === "bid" ? "positive" : "negative"}">◆ ${nearEvent.side === "bid" ? "BID" : "ASK"} 承接 @ ${price(nearEvent.price)}</span> · 吸收 ${fmt(nearEvent.absorption_score)}× · 补量 ${fmt(nearEvent.replenish_ratio)}× (${nearEvent.reload_count}次)`;
+    }
+    tip.innerHTML = tipHtml;
   }
 }
+
 function drawDepth() {
   const { ctx, w, h } = context("depth-chart");
   grid(ctx, w, h, 4, 6, 2);
@@ -869,7 +1326,7 @@ function drawDepth() {
     ...rows.map((r) => Math.max(r.bid_notional, r.ask_notional)),
   );
   const x = (i) => 9 + (i / 40) * (w - 24),
-    y = (v) => h - 20 - (v / max) * (h - 30);
+    y = (v) => h - 18 - (v / max) * (h - 26);
   for (const [field, color, fill] of [
     ["bid_notional", C.mint, "#79dfb810"],
     ["ask_notional", C.coral, "#ec889110"],
@@ -877,14 +1334,14 @@ function drawDepth() {
     const pts = rows.map((r, i) => (r.complete ? [x(i), y(r[field])] : null));
     line(ctx, pts, color, 1.5);
     ctx.beginPath();
-    ctx.moveTo(x(0), h - 20);
+    ctx.moveTo(x(0), h - 18);
     for (const p of pts) {
       if (!p) break;
       ctx.lineTo(...p);
     }
     const last = pts.filter(Boolean).at(-1);
     if (last) {
-      ctx.lineTo(last[0], h - 20);
+      ctx.lineTo(last[0], h - 18);
       ctx.closePath();
       ctx.fillStyle = fill;
       ctx.fill();
@@ -896,6 +1353,7 @@ function drawDepth() {
   for (let i = 0; i <= 4; i++)
     ctx.fillText(i * 5 + " bp", Math.min(w - 35, x(i * 10)), h - 4);
 }
+
 function drawFlow() {
   const { ctx, w, h } = context("flow-chart");
   grid(ctx, w, h, 5, 5, 2);
@@ -936,10 +1394,11 @@ function drawFlow() {
     0.8,
   );
 }
+
 function drawPhase() {
   const { ctx, w, h } = context("phase-chart");
   if (!w || !h) return;
-  const pad = 35,
+  const pad = 26,
     cx = w / 2,
     cy = h / 2,
     rx = (w - 2 * pad) / 2,
@@ -974,17 +1433,17 @@ function drawPhase() {
   ctx.fillStyle = "#587584";
   ctx.font = "8px sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("Rotation +1", cx, 17);
-  ctx.fillText("−1", cx, h - pad + 13);
-  ctx.fillText("Pressure", cx, h - 5);
-  ctx.fillText("−1", pad - 14, cy + 3);
-  ctx.fillText("+1", w - pad + 14, cy + 3);
+  ctx.fillText("Rotation +1", cx, 13);
+  ctx.fillText("−1", cx, h - pad + 11);
+  ctx.fillText("Pressure", cx, h - 3);
+  ctx.fillText("−1", pad - 11, cy + 3);
+  ctx.fillText("+1", w - pad + 11, cy + 3);
   ctx.textAlign = "left";
   ctx.font = "7px sans-serif";
   ctx.fillStyle = "#416f60";
-  ctx.fillText("买侧优势增强", cx + 8, pad + 15);
+  ctx.fillText("买侧优势增强", cx + 6, pad + 12);
   ctx.fillStyle = "#775362";
-  ctx.fillText("卖侧优势增强", pad + 8, h - pad - 10);
+  ctx.fillText("卖侧优势增强", pad + 6, h - pad - 6);
   const latest = ui.shown?.source_ts ?? 0;
   const pts = visibleHistory().filter(
     (p) => p.ts > latest - 60000 && p.ts <= latest,
@@ -1011,14 +1470,15 @@ function drawPhase() {
     x = cx + p.pressure * rx,
     y = cy - p.rotation * ry;
   ctx.beginPath();
-  ctx.arc(x, y, 7, 0, Math.PI * 2);
+  ctx.arc(x, y, 6, 0, Math.PI * 2);
   ctx.fillStyle = "#79dfb822";
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(x, y, 3, 0, Math.PI * 2);
+  ctx.arc(x, y, 2.8, 0, Math.PI * 2);
   ctx.fillStyle = C.mint;
   ctx.fill();
 }
+
 function drawAll() {
   drawPrice();
   drawDepth();
@@ -1050,6 +1510,7 @@ function drawAll() {
     C.mint,
   );
 }
+
 function animation() {
   if (ui.dirty && !document.hidden && !ui.benchmark) {
     ui.dirty = false;
@@ -1064,6 +1525,7 @@ function animation() {
   requestAnimationFrame(animation);
 }
 requestAnimationFrame(animation);
+
 setInterval(() => {
   text("clock", time(Date.now()) + " CST");
   if (
@@ -1085,9 +1547,10 @@ setInterval(() => {
     );
   }
 }, 1000);
+
 $("price-chart").addEventListener("pointermove", (e) => {
   const rect = e.currentTarget.getBoundingClientRect();
-  ui.mouse = { x: e.clientX - rect.left };
+  ui.mouse = { x: e.clientX - rect.left, y: e.clientY - rect.top };
   ui.dirty = true;
 });
 $("price-chart").addEventListener("pointerleave", () => {
@@ -1095,6 +1558,27 @@ $("price-chart").addEventListener("pointerleave", () => {
   $("chart-tooltip").hidden = true;
   ui.dirty = true;
 });
+
+for (const tbodyId of ["events-body", "defense-body"]) {
+  const el = $(tbodyId);
+  el.addEventListener("pointerover", (e) => {
+    const tr = e.target.closest("tr[data-price]");
+    if (!tr) return;
+    const p = Number(tr.dataset.price);
+    const ts = tr.dataset.ts ? Number(tr.dataset.ts) : null;
+    if (finite(p)) {
+      ui.focusPrice = p;
+      ui.focusTs = finite(ts) ? ts : null;
+      ui.dirty = true;
+    }
+  });
+  el.addEventListener("pointerleave", () => {
+    ui.focusPrice = null;
+    ui.focusTs = null;
+    ui.dirty = true;
+  });
+}
+
 $("market-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!ui.symbols.length) {
@@ -1163,16 +1647,18 @@ $("pause-button").addEventListener("click", () => {
     notice(ui.latest?.valid ? "" : "等待有效行情");
   }
 });
+
 for (const [id, attribute, property] of [
   ["timeframe", "seconds", "seconds"],
   ["flow-window", "window", "window"],
   ["event-filter", "filter", "filter"],
+  ["chart-mode", "mode", "chartMode"],
 ]) {
   $(id).addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
     ui[property] =
-      attribute === "filter"
+      attribute === "filter" || attribute === "mode"
         ? b.dataset[attribute]
         : Number(b.dataset[attribute]);
     $(id)
@@ -1186,6 +1672,19 @@ for (const [id, attribute, property] of [
     }
   });
 }
+
+$("chart-overlays").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-overlay]");
+  if (!b) return;
+  const key = b.dataset.overlay;
+  ui.overlays[key] = !ui.overlays[key];
+  b.classList.toggle("active", ui.overlays[key]);
+  ui.dirty = true;
+  if (ui.paused && ui.shown) {
+    drawAll();
+  }
+});
+
 $("export-button").addEventListener("click", () => {
   const d = ui.shown;
   if (!d?.valid) {
@@ -1215,6 +1714,7 @@ $("export-button").addEventListener("click", () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast("当前指标、事件和会话走势已导出");
 });
+
 const descriptions = {
   pressure: [
     "加权盘口失衡 · Pressure",

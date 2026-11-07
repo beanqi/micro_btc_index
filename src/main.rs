@@ -260,30 +260,36 @@ async fn serve_socket(socket: WebSocket, mut rx: watch::Receiver<Arc<str>>) {
     }
 }
 async fn index() -> impl IntoResponse {
+    let body = std::fs::read_to_string("web/index.html")
+        .unwrap_or_else(|_| include_str!("../web/index.html").to_owned());
     (
         [
             (header::CONTENT_TYPE, "text/html; charset=utf-8"),
             (header::CACHE_CONTROL, "no-cache"),
         ],
-        include_str!("../web/index.html"),
+        body,
     )
 }
 async fn javascript() -> impl IntoResponse {
+    let body = std::fs::read_to_string("web/app.js")
+        .unwrap_or_else(|_| include_str!("../web/app.js").to_owned());
     (
         [
             (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
             (header::CACHE_CONTROL, "no-cache"),
         ],
-        include_str!("../web/app.js"),
+        body,
     )
 }
 async fn css() -> impl IntoResponse {
+    let body = std::fs::read_to_string("web/style.css")
+        .unwrap_or_else(|_| include_str!("../web/style.css").to_owned());
     (
         [
             (header::CONTENT_TYPE, "text/css; charset=utf-8"),
             (header::CACHE_CONTROL, "no-cache"),
         ],
-        include_str!("../web/style.css"),
+        body,
     )
 }
 #[tokio::main]

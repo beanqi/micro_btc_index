@@ -444,7 +444,7 @@ impl Engine {
             .take(20)
             .map(|(p, l)| self.level_view(false, *p, l, now))
             .collect();
-        let mut defense: Vec<_> = self
+        let near_levels: Vec<_> = self
             .book
             .bids
             .iter()
@@ -458,7 +458,16 @@ impl Engine {
                     .take(120)
                     .map(|(p, l)| self.level_view(false, *p, l, now)),
             )
-            .filter(|l| l.size >= self.book.meaningful)
+            .collect();
+        let near_avg = if near_levels.is_empty() {
+            0.0
+        } else {
+            near_levels.iter().map(|l| l.size).sum::<f64>() / near_levels.len() as f64
+        };
+        let defense_min_size = self.book.meaningful.max(near_avg * 0.25);
+        let mut defense: Vec<_> = near_levels
+            .into_iter()
+            .filter(|l| l.size >= defense_min_size)
             .collect();
         defense.sort_by(|a, b| b.defense_heat.total_cmp(&a.defense_heat));
         defense.truncate(12);
