@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#0b1014" />
+    <meta
+      name="description"
+      content="Binance 现货实时微观结构监控：增量深度、主动成交、吸收与补单。"
+    />
+    <title>μScope · 微观市场监控</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23151f24'/%3E%3Ctext x='8' y='29' fill='%2374e3b5' font-size='32'%3Eμ%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <aside class="rail" aria-label="主导航">
+      <a class="brand-mark" href="#overview" title="μScope">μ<span></span></a>
+      <div class="rail-links">
+        <a
+          href="#overview"
+          class="active"
+          title="市场总览"
+          aria-label="市场总览"
+          ><svg viewBox="0 0 24 24">
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" /></svg></a
+        ><a href="#flow-panel" title="主动成交流" aria-label="主动成交流"
+          ><svg viewBox="0 0 24 24">
+            <path d="M4 17V9m5 11V4m6 12V8m5 12V3" /></svg></a
+        ><a href="#events-panel" title="流动性事件" aria-label="流动性事件"
+          ><svg viewBox="0 0 24 24">
+            <path d="m3 12 5-7 5 14 4-10 4 3" /></svg></a
+        ><a href="#defense-panel" title="价位防守" aria-label="价位防守"
+          ><svg viewBox="0 0 24 24">
+            <path d="m12 3 8 4v5c0 5-8 9-8 9s-8-4-8-9V7Z" />
+            <path d="m8 12 3 3 5-6" /></svg
+        ></a>
+      </div>
+      <button
+        id="help-rail"
+        class="rail-help"
+        title="指标说明"
+        aria-label="指标说明"
+      >
+        ?
+      </button>
+      <div class="rail-foot">SPOT</div>
+    </aside>
+    <div class="shell" id="overview">
+      <header class="topbar">
+        <div class="wordmark">
+          μScope<span class="wordmark-divider"></span
+          ><span class="top-title">微观市场监控</span
+          ><span class="version">BETA</span>
+        </div>
+        <div class="top-right">
+          <span class="source-label">BINANCE PUBLIC DATA</span
+          ><span class="connection" id="connection"
+            ><i></i><span id="connection-text">准备连接</span></span
+          ><span id="clock" class="mono">--:--:--</span>
+        </div>
+      </header>
+      <main>
+        <div class="page-heading">
+          <div>
+            <div class="eyebrow">MARKET MICROSTRUCTURE</div>
+            <h1>市场，总有迹可循<span class="heading-dot">.</span></h1>
+            <p>从可见挂单到真实成交，观察每一轮流动性的变化。</p>
+          </div>
+          <div class="heading-actions">
+            <button class="button subtle" id="help-button">
+              <span>ⓘ</span> 指标说明</button
+            ><button class="button subtle" id="export-button">
+              <span>↓</span> 导出快照
+            </button>
+          </div>
+        </div>
+        <section class="market-toolbar" aria-label="市场设置">
+          <form id="market-form">
+            <label class="exchange-field"
+              ><span class="binance-symbol">◈</span
+              ><select id="venue" aria-label="交易所">
+                <option value="binance">Binance</option></select
+              ><span class="spot-tag">现货</span></label
+            >
+            <div class="symbol-field">
+              <svg viewBox="0 0 20 20">
+                <circle cx="8" cy="8" r="5.5" />
+                <path d="m12 12 5 5" /></svg
+              ><input
+                id="symbol"
+                aria-label="现货 Symbol"
+                placeholder="输入现货 Symbol"
+                value="BTCUSDT"
+                list="symbol-list"
+                autocomplete="off"
+                spellcheck="false"
+              /><datalist id="symbol-list"></datalist><kbd>↵</kbd>
+            </div>
+            <button class="button primary" type="submit">
+              开始监控 <span>↗</span>
+            </button>
+          </form>
+          <div class="quick-symbols" aria-label="快捷交易对">
+            <button data-symbol="BTCUSDT" class="selected">
+              BTC<span>/USDT</span></button
+            ><button data-symbol="ETHUSDT">ETH<span>/USDT</span></button
+            ><button data-symbol="SOLUSDT">SOL<span>/USDT</span></button>
+          </div>
+          <button id="pause-button" class="button pause">
+            <span>Ⅱ</span> 暂停观察
+          </button>
+        </section>
+        <div id="notice" class="notice" role="status">
+          <span class="notice-dot"></span
+          ><span id="notice-text">正在加载 Binance 现货市场信息…</span
+          ><button id="retry-button" hidden>重新连接 ↗</button>
+        </div>
+        <section class="market-strip" aria-label="市场概况">
+          <div class="pair-identity">
+            <div class="coin-icon" id="coin-icon">₿</div>
+            <div>
+              <h2>
+                <span id="base-name">BTC</span
+                ><span class="quote-name" id="quote-name"> / USDT</span>
+              </h2>
+              <span class="small muted"
+                >Binance · Spot <span class="tag">L2 + Trades</span></span
+              >
+            </div>
+          </div>
+          <div class="price-block">
+            <strong id="mid-price" class="mono">—</strong
+            ><span id="price-change" class="mono muted">等待行情</span>
+          </div>
+          <div class="strip-stat">
+            <span>24h 最高 / 最低</span><b class="mono" id="high-low">— / —</b>
+          </div>
+          <div class="strip-stat">
+            <span>24h 成交额 <small class="quote-unit">USDT</small></span
+            ><b class="mono" id="volume24">—</b>
+          </div>
+          <div class="strip-stat">
+            <span>买卖价差</span
+            ><b class="mono" id="spread">— <small>bp</small></b>
+          </div>
+          <div class="strip-stat feed-stat">
+            <span>行情接收年龄</span
+            ><b id="feed-age" class="mono">— <small>ms</small></b>
+          </div>
+        </section>
+        <div class="section-label">
+          <span>核心信号 <small>CORE SIGNALS</small></span
+          ><span class="tiny muted">只描述市场行为，不合并为交易评分</span>
+        </div>
+        <section class="metrics-grid" aria-label="核心指标">
+          <article class="metric" data-help="pressure">
+            <div class="metric-label">
+              加权盘口失衡
+              <span
+                >PRESSURE
+                <button
+                  class="info"
+                  aria-label="Pressure 说明"
+                  data-help-button="pressure"
+                >
+                  i
+                </button></span
+              >
+            </div>
+            <div class="metric-main">
+              <strong id="pressure" class="mono">—</strong
+              ><span class="metric-tag" id="pressure-tag">等待数据</span>
+            </div>
+            <canvas
+              id="spark-pressure"
+              class="spark"
+              aria-label="Pressure 近期走势"
+            ></canvas>
+            <div class="diverging">
+              <div id="pressure-fill"></div>
+              <i></i>
+            </div>
+            <div class="metric-foot">
+              <span>ASK 占优</span><span>前 12 档 · 1/√i 加权</span
+              ><span>BID 占优</span>
+            </div>
+          </article>
+          <article class="metric">
+            <div class="metric-label">
+              主动成交净额
+              <span
+                >TRADE DELTA
+                <button
+                  class="info"
+                  aria-label="Delta 说明"
+                  data-help-button="delta"
+                >
+                  i
+                </button></span
+              >
+            </div>
+            <div class="metric-main">
+              <strong id="delta" class="mono">—</strong
+              ><span id="delta-unit" class="metric-tag">5s · USDT</span>
+            </div>
+            <canvas
+              id="spark-delta"
+              class="spark"
+              aria-label="Delta 近期走势"
+            ></canvas>
+            <div class="flow-split"><i id="buy-share-fill"></i></div>
+            <div class="metric-foot">
+              <span id="buy-share-text">主动买入 —</span
+              ><span id="tfi">TFI —</span
+              ><span id="sell-share-text">卖出 —</span>
+            </div>
+          </article>
+          <article class="metric">
+            <div class="metric-label">
+              压力变化
+              <span
+                >ROTATION
+                <button
+                  class="info"
+                  aria-label="Rotation 说明"
+                  data-help-button="rotation"
+                >
+                  i
+                </button></span
+              >
+            </div>
+            <div class="metric-main">
+              <strong id="rotation" class="mono">—</strong
+              ><span class="metric-tag" id="rotation-tag">预热中</span>
+            </div>
+            <canvas
+              id="spark-rotation"
+              class="spark"
+              aria-label="Rotation 近期走势"
+            ></canvas>
+            <div class="metric-caption">盘口相对优势正在向哪一侧转移</div>
+            <div class="metric-foot">
+              <span>−1 向 ASK 转移</span><span>+1 向 BID 转移</span>
+            </div>
+          </article>
+          <article class="metric">
+            <div class="metric-label">
+              波动扩张
+              <span
+                >VOL EXPANSION
+                <button
+                  class="info"
+                  aria-label="波动扩张说明"
+                  data-help-button="volatility"
+                >
+                  i
+                </button></span
+              >
+            </div>
+            <div class="metric-main">
+              <strong id="expansion" class="mono">—</strong
+              ><span id="expansion-tag" class="metric-tag">预热中</span>
+            </div>
+            <canvas
+              id="spark-expansion"
+              class="spark"
+              aria-label="波动扩张近期走势"
+            ></canvas>
+            <div class="metric-caption">
+              短期波动率 <span class="mono" id="sigma">σ —</span>
+            </div>
+            <div class="metric-foot">
+              <span>最多 20 个对数收益</span><span>未年化</span>
+            </div>
+          </article>
+        </section>
+        <div class="dashboard-grid">
+          <section class="panel price-panel">
+            <div class="panel-heading">
+              <div>
+                <h3>价格与盘口压力 <span>PRICE & PRESSURE</span></h3>
+                <p>对照价格推进，理解挂单优势是否生效</p>
+              </div>
+              <div class="segmented" id="timeframe">
+                <button data-seconds="60" class="active">1 分钟</button
+                ><button data-seconds="180">3 分钟</button
+                ><button data-seconds="900">15 分钟</button>
+              </div>
+            </div>
+            <div class="chart-legend">
+              <span
+                ><i class="mint"></i>中间价
+                <b class="mono" id="chart-price">—</b></span
+              ><span><i class="lavender"></i>Pressure</span
+              ><span class="legend-right" id="history-duration"
+                >正在积累本次会话</span
+              >
+            </div>
+            <div class="price-chart-wrap">
+              <canvas
+                id="price-chart"
+                aria-label="实时中间价与盘口失衡时间序列"
+              ></canvas>
+              <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+              <div id="chart-empty" class="chart-empty">
+                <span class="signal-icon">∿</span><b>等待实时行情</b
+                ><span>连接后将在这里绘制本次会话的市场轨迹</span>
+              </div>
+            </div>
+            <div class="chart-bottom">
+              <span><i class="live-dot"></i>100ms 指标推送</span
+              ><span id="chart-sampling">源事件采样 · 接收后绘制</span>
+            </div>
+          </section>
+          <section class="panel book-panel">
+            <div class="panel-heading">
+              <div>
+                <h3>实时订单簿 <span>ORDER BOOK</span></h3>
+                <p>可见挂单 · 两侧各 20 档</p>
+              </div>
+              <span class="mini-badge">L2</span>
+            </div>
+            <div class="table-head book-row">
+              <span>价格 <small class="quote-unit">USDT</small></span
+              ><span>数量 <small class="base-unit">BTC</small></span
+              ><span>累计</span>
+            </div>
+            <div id="asks" class="book-side"></div>
+            <div class="book-mid">
+              <strong id="book-mid" class="mono">—</strong
+              ><span id="book-spread">价差 —</span>
+            </div>
+            <div id="bids" class="book-side"></div>
+            <div class="book-balance">
+              <div>
+                <span class="positive">Bid <b id="book-bid-share">—</b></span
+                ><span class="negative">Ask <b id="book-ask-share">—</b></span>
+              </div>
+              <div class="flow-split"><i id="book-balance-fill"></i></div>
+              <p>比例为当前显示的各 20 档数量</p>
+            </div>
+          </section>
+          <section class="panel depth-panel">
+            <div class="panel-heading">
+              <div>
+                <h3>
+                  近价流动性
+                  <button
+                    class="info"
+                    aria-label="近价深度说明"
+                    data-help-button="depth"
+                  >
+                    i
+                  </button>
+                </h3>
+                <p>中间价两侧的可见承接规模</p>
+              </div>
+              <span id="coverage" class="mini-badge">待同步</span>
+            </div>
+            <div class="depth-head">
+              <span>距离中价</span
+              ><span class="positive"
+                >BID <small class="quote-unit">USDT</small></span
+              ><span class="negative"
+                >ASK <small class="quote-unit">USDT</small></span
+              >
+            </div>
+            <div id="depth-bands"></div>
+            <canvas
+              id="depth-chart"
+              class="depth-chart"
+              aria-label="距离中间价 0 到 20 bp 的累计深度"
+            ></canvas>
+            <div class="panel-foot">
+              累计深度曲线 · 距离中价 0–20 bp <span>数量 × 中间价</span>
+            </div>
+          </section>
+          <section class="panel flow-panel" id="flow-panel">
+            <div class="panel-heading">
+              <div>
+                <h3>主动成交流 <span>ORDER FLOW</span></h3>
+                <p>真实发生的进攻，按成交 ID 去重</p>
+              </div>
+              <div class="segmented" id="flow-window">
+                <button data-window="1">1s</button
+                ><button data-window="5" class="active">5s</button
+                ><button data-window="10">10s</button>
+              </div>
+            </div>
+            <div class="flow-totals">
+              <div>
+                <span><i class="legend-dot mint"></i>主动买入</span
+                ><b class="mono positive" id="flow-buy">—</b>
+              </div>
+              <span class="flow-vs">/</span>
+              <div>
+                <span><i class="legend-dot coral"></i>主动卖出</span
+                ><b class="mono negative" id="flow-sell">—</b>
+              </div>
+            </div>
+            <canvas
+              id="flow-chart"
+              class="flow-chart"
+              aria-label="每秒主动买卖成交额"
+            ></canvas>
+            <div class="panel-foot">
+              <span id="flow-trades">等待成交窗口预热</span
+              ><span id="tps" class="mono">— trades/s</span>
+            </div>
+          </section>
+          <section class="panel events-panel" id="events-panel">
+            <div class="panel-heading">
+              <div>
+                <h3>流动性事件 <span>LIQUIDITY EVENTS</span></h3>
+                <p>主动成交与被动承接的交汇点</p>
+              </div>
+              <div class="segmented" id="event-filter">
+                <button data-filter="all" class="active">全部</button
+                ><button data-filter="bid">Bid 承接</button
+                ><button data-filter="ask">Ask 承接</button>
+              </div>
+            </div>
+            <div class="event-summary">
+              <div>
+                <span
+                  >吸收强度
+                  <button
+                    class="info"
+                    aria-label="吸收说明"
+                    data-help-button="absorption"
+                  >
+                    i
+                  </button></span
+                ><b class="mono" id="absorption-max">—</b
+                ><small>本轮最高攻击量 / 初始量</small>
+              </div>
+              <div>
+                <span
+                  >补单强度
+                  <button
+                    class="info"
+                    aria-label="补单说明"
+                    data-help-button="reload"
+                  >
+                    i
+                  </button></span
+                ><b class="mono" id="reload-max">—</b
+                ><small>本轮最高有效补量 / 初始量</small>
+              </div>
+              <div>
+                <span>重复补量事件</span><b class="mono" id="reload-events">—</b
+                ><small>≥2 次补量 · 补量比 ≥0.5</small>
+              </div>
+            </div>
+            <div class="table-scroll event-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间 / 行为</th>
+                    <th>防守价位</th>
+                    <th>吸收比</th>
+                    <th>补量比 / 次数</th>
+                    <th>1s / 5s / 15s 价格反应</th>
+                  </tr>
+                </thead>
+                <tbody id="events-body"></tbody>
+              </table>
+              <div id="events-empty" class="empty-inline">
+                <span>◎</span><b>等待可确认的承接事件</b
+                ><small>吸收比 ≥0.70，初始量有意义，确认时仍有可见挂单</small>
+              </div>
+            </div>
+            <div class="panel-foot">
+              净补量属于可观察行为，不能证明隐藏订单
+              <span>价格反应为事件确认后的原始收益 · bp</span>
+            </div>
+          </section>
+          <section class="panel tape-panel">
+            <div class="panel-heading">
+              <div>
+                <h3>逐笔成交 <span>TIME & SALES</span></h3>
+                <p>最近 60 笔 · 主动方方向</p>
+              </div>
+              <span class="tape-live"><i class="live-dot"></i>LIVE</span>
+            </div>
+            <div class="table-head tape-row">
+              <span>时间</span><span>价格</span
+              ><span>数量 <small class="base-unit">BTC</small></span
+              ><span>方向</span>
+            </div>
+            <div id="tape" class="tape-list"></div>
+            <div class="panel-foot">列表展示上限不影响成交窗口统计</div>
+          </section>
+          <section class="panel defense-panel" id="defense-panel">
+            <div class="panel-heading">
+              <div>
+                <h3>
+                  价位防守热度
+                  <button
+                    class="info"
+                    aria-label="防守热度说明"
+                    data-help-button="defense"
+                  >
+                    i</button
+                  ><span>DEFENSE HEAT</span>
+                </h3>
+                <p>两侧前 120 档中，持续性与保留规模最高的 12 个价位</p>
+              </div>
+              <div class="heat-legend">弱 <i></i> 强</div>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>方向 / 价位</th>
+                    <th>当前数量</th>
+                    <th>存续</th>
+                    <th>刷新</th>
+                    <th>保留比例</th>
+                    <th>防守热度</th>
+                  </tr>
+                </thead>
+                <tbody id="defense-body"></tbody>
+              </table>
+              <div class="empty-inline" id="defense-empty">
+                <span>≋</span><b>等待订单簿建立</b
+                ><small>价位生命周期会从本次订阅开始累计</small>
+              </div>
+            </div>
+          </section>
+          <section class="panel phase-panel">
+            <div class="panel-heading">
+              <div>
+                <h3>压力相图 <span>PHASE SPACE</span></h3>
+                <p>当前优势 × 优势变化 · 最近 60 秒</p>
+              </div>
+              <button
+                class="info"
+                aria-label="压力相图说明"
+                data-help-button="phase"
+              >
+                i
+              </button>
+            </div>
+            <div class="phase-wrap">
+              <canvas
+                id="phase-chart"
+                aria-label="横轴 Pressure，纵轴 Rotation 的实时相图"
+              ></canvas>
+            </div>
+            <div class="panel-foot">
+              <span><i class="legend-dot mint"></i>当前状态</span
+              ><span>轨迹颜色随时间淡出</span>
+            </div>
+          </section>
+        </div>
+        <section class="quality-strip">
+          <span
+            ><i id="quality-dot" class="quality-dot"></i
+            ><b id="quality-label">等待数据同步</b></span
+          ><span>深度序号 <b id="sequence" class="mono">—</b></span
+          ><span>已维护档位 <b id="level-count" class="mono">—</b></span
+          ><span>成交缺口 <b id="trade-gaps" class="mono">—</b></span
+          ><span
+            title="未找到相同价位或最近可见量来自成交之后；这些成交仍全部计入 Delta"
+            >未匹配盘口成交 <b id="unmatched" class="mono">—</b></span
+          ><span>源时间差 <b id="source-age" class="mono">—</b></span>
+        </section>
+        <footer>
+          <span><b>μScope</b> 让市场行为变得可观察。</span>
+          <div>
+            <span id="performance" class="mono">JS + Canvas · 等待采样</span
+            ><span class="footer-divider">|</span
+            ><span id="server-performance" class="mono">Rust compute —</span>
+          </div>
+        </footer>
+      </main>
+    </div>
+    <dialog id="help-dialog">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow">METRIC REFERENCE</span>
+          <h2 id="help-title">指标与数据口径</h2>
+        </div>
+        <button id="close-help" aria-label="关闭说明">×</button>
+      </div>
+      <div id="help-content"></div>
+      <div class="dialog-foot">
+        以项目《核心微观结构指标与计算方法》为计算依据。所有金额使用当前交易对的报价币。
+      </div>
+    </dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>
