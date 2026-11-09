@@ -37,8 +37,25 @@ pub fn price(value: &str) -> Result<Price> {
 pub fn as_price(p: Price) -> f64 {
     p as f64 / PRICE_SCALE
 }
+/// Exact decimal text of a price key; the inverse of [`price`].
+pub fn format_price(p: Price) -> String {
+    let (whole, fraction) = (p / 100_000_000, p % 100_000_000);
+    if fraction == 0 {
+        return whole.to_string();
+    }
+    let text = format!("{whole}.{fraction:08}");
+    text.trim_end_matches('0').to_owned()
+}
+/// Accepts `BTCUSDT` as well as `btc/usdt`, `BTC-USDT` and `BTC_USDT`.
+pub fn normalize_symbol(input: &str) -> Result<String> {
+    let symbol = input.trim().replace(['/', '-', '_'], "").to_uppercase();
+    if symbol.is_empty() || symbol.len() > 80 || !symbol.chars().all(char::is_alphanumeric) {
+        bail!("Symbol 格式不正确");
+    }
+    Ok(symbol)
+}
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SymbolInfo {
     pub symbol: String,
     pub base: String,
@@ -97,5 +114,25 @@ mod tests {
         assert!(price("1.000000001").is_err());
         assert!(price("-1").is_err());
         assert!(price("0").is_err());
+    }
+    #[test]
+    fn formatted_prices_round_trip_exactly() {
+        for text in [
+            "0.00000001",
+            "99999.01",
+            "80504",
+            "0.1",
+            "12345678.12345678",
+        ] {
+            assert_eq!(format_price(price(text).unwrap()), text);
+        }
+        assert_eq!(format_price(price("97000.01000000").unwrap()), "97000.01");
+    }
+    #[test]
+    fn symbols_are_normalized() {
+        assert_eq!(normalize_symbol(" btc/usdt ").unwrap(), "BTCUSDT");
+        assert_eq!(normalize_symbol("eth-btc").unwrap(), "ETHBTC");
+        assert!(normalize_symbol("").is_err());
+        assert!(normalize_symbol("BTC USDT").is_err());
     }
 }
